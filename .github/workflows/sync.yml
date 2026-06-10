@@ -5,36 +5,36 @@ permissions:
 
 on:
   schedule:
-    - cron: "0 0 * * *" # every day
+    - cron: "0 23 * * *" # 北京时间每天早上7点
   workflow_dispatch:
 
 jobs:
-  sync_latest_from_upstream:
-    name: Sync latest commits from upstream repo
+  sync:
     runs-on: ubuntu-latest
-    if: ${{ github.event.repository.fork }}
-
     steps:
-      # Step 1: run a standard checkout action
-      - name: Checkout target repo
+      - name: 检出代码
         uses: actions/checkout@v6
-
-      # Step 2: run the sync action
-      - name: Sync upstream changes
-        id: sync
-        uses: aormsby/fork-sync-with-upstream-action@v3.4.3
         with:
-          upstream_sync_repo: cmliu/edgetunnel
-          upstream_sync_branch: main
-          target_sync_branch: main
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }} # automatically generated, no need to set
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-          # Set test_mode true to run tests instead of the true action!!
-          test_mode: false
-
-      - name: Sync check
-        if: failure()
+      - name: 同步上游（彻底清除所有上游工作流文件）
         run: |
-          echo "[Error] 由于上游仓库的 workflow 文件变更，导致 GitHub 自动暂停了本次自动更新，你需要手动 Sync Fork 一次，详细教程请查看项目README.md "
-          echo "[Error] Due to a change in the workflow file of the upstream repository, GitHub has automatically suspended the scheduled automatic update. You need to manually sync your fork. Please refer to the project README.md for instructions. "
-          exit 1
+          git config --global user.name "bot"
+          git config --global user.email "bot@github.com"
+          git remote add upstream https://github.com/cmliu/edgetunnel.git
+          git fetch upstream
+          
+          # 1. 拉取上游所有文件
+          git checkout upstream/main -- .
+          
+          # 2. 关键：彻底删除整个.github目录（包括上游新增的所有工作流）
+          rm -rf .github
+          
+          # 3. 恢复你自己的.github目录（只保留你的upstream-sync.yml）
+          git checkout HEAD -- .github/
+          
+          # 4. 提交并推送
+          git add .
+          git commit -m "同步上游最新代码" || echo "没有需要同步的更新"
+          git push origin main --force
